@@ -1,0 +1,98 @@
+// Prisma schema for PASS Protocol
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  walletAddress String   @unique
+  createdAt     DateTime @default(now())
+}
+
+model Pass {
+  id                 String       @id @default(uuid())
+  onchainPassAddress String       @unique
+  ownerWallet        String
+  recipientWallet    String
+  amount             Float        // Total allowance in USDC
+  spent              Float        @default(0.0)
+  remaining          Float
+  purpose            String       // Human readable purpose description
+  category           String       // Canonical category: GROCERIES, FOOD, TRANSPORT, etc.
+  maxPerTransaction  Float
+  expiresAt          DateTime
+  status             String       @default("ACTIVE") // ACTIVE, REVOKED, EXPIRED, DEPLETED
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  payments           Payment[]
+  auditLogs          AuditLog[]
+  aiAnalyses         AIAnalysis[]
+}
+
+model Payment {
+  id           String     @id @default(uuid())
+  passId       String
+  pass         Pass       @relation(fields: [passId], references: [id], onDelete: Cascade)
+  merchantId   String?
+  merchant     Merchant?  @relation(fields: [merchantId], references: [id])
+  amount       Float
+  category     String
+  description  String
+  txSignature  String?    // On-chain Solana Devnet signature
+  status       String     @default("SUCCESS") // SUCCESS, BLOCKED, FAILED
+  blockReason  String?    // Reason if blocked
+  createdAt    DateTime   @default(now())
+
+  receipts     Receipt[]
+  aiAnalyses   AIAnalysis[]
+}
+
+model Merchant {
+  id            String    @id @default(uuid())
+  name          String
+  category      String    // Canonical category
+  walletAddress String    // Merchant receiving address
+  createdAt     DateTime  @default(now())
+
+  payments      Payment[]
+}
+
+model Receipt {
+  id          String   @id @default(uuid())
+  paymentId   String
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  imageUrl    String?
+  status      String   @default("MATCH") // MATCH, MISMATCH, REVIEW
+  confidence  Float    @default(1.0)
+  analysis    String?  // Detailed reasoning
+  createdAt   DateTime @default(now())
+}
+
+model AIAnalysis {
+  id         String   @id @default(uuid())
+  passId     String?
+  pass       Pass?    @relation(fields: [passId], references: [id], onDelete: Cascade)
+  paymentId  String?
+  payment    Payment? @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  input      String
+  output     String
+  confidence Float    @default(1.0)
+  createdAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  actor     String   // Wallet address or "SYSTEM"
+  action    String   // "CREATE_PASS", "REVOKE_PASS", "PAYMENT_ATTEMPT", etc.
+  passId    String?
+  pass      Pass?    @relation(fields: [passId], references: [id], onDelete: Cascade)
+  metadata  String?  // JSON string
+  createdAt DateTime @default(now())
+}
