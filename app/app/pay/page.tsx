@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useUnifiedWallet } from "@/lib/wallet/UnifiedWalletContext";
 import {
   CreditCard,
   CheckCircle2,
@@ -11,11 +11,12 @@ import {
   ExternalLink,
   Store,
   ShieldCheck,
+  Wallet,
 } from "lucide-react";
 import { PassCategory, ALL_CATEGORIES } from "@/types";
 
 export default function PayTerminalPage() {
-  const { publicKey } = useWallet();
+  const { isConnected, address, walletName, sendPayment, openModal } = useUnifiedWallet();
   const [passes, setPasses] = useState<any[]>([]);
   const [selectedPassId, setSelectedPassId] = useState<string>("");
   const [merchantName, setMerchantName] = useState<string>("FreshMart Supermarket");
@@ -45,14 +46,14 @@ export default function PayTerminalPage() {
             remaining: 100.0,
             amount: 100.0,
             maxPerTransaction: 50.0,
-            recipientWallet: publicKey?.toBase58() || "Bob (0x3C...1B)",
+            recipientWallet: address || "Bob (0x3C...1B)",
             status: "ACTIVE",
           };
           setPasses([sample]);
           setSelectedPassId(sample.id);
         }
       });
-  }, [publicKey]);
+  }, [address]);
 
   const selectedPass = passes.find((p) => p.id === selectedPassId) || passes[0];
 
@@ -84,12 +85,28 @@ export default function PayTerminalPage() {
     }
   };
 
-  // Execute payment
+  // Execute payment with real wallet signature if connected
   const handleExecutePayment = async () => {
     setIsPaying(true);
     setErrorMsg(null);
 
     try {
+      let realTxHash: string | undefined = undefined;
+
+      // If policy check succeeds, prompt real wallet extension to approve!
+      if (isConnected && address) {
+        const tx = await sendPayment({
+          to: selectedPass?.ownerWallet || address,
+          amount: parseFloat(amount),
+          memo: `PASS_SPEND:${merchantCategory}:${amount}`,
+        });
+        if (tx.success && tx.txHash) {
+          realTxHash = tx.txHash;
+        } else if (tx.error) {
+          console.warn("Wallet payment prompt cancelled or rejected:", tx.error);
+        }
+      }
+
       const res = await fetch("/api/payment/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,6 +117,7 @@ export default function PayTerminalPage() {
           amount: parseFloat(amount),
           recipient: selectedPass?.recipientWallet || "Bob",
           description,
+          txSignature: realTxHash,
           receiptItems: ["Item 1", "Item 2"],
         }),
       });
@@ -107,7 +125,6 @@ export default function PayTerminalPage() {
       const data = await res.json();
       if (data.success) {
         setPaymentSuccess(data);
-        // Update local remaining balance
         if (data.pass) {
           setPasses((prev) =>
             prev.map((p) => (p.id === data.pass.id ? { ...p, ...data.pass } : p))
@@ -127,13 +144,25 @@ export default function PayTerminalPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-          Pay with PASS
-        </h1>
-        <p className="text-xs sm:text-sm text-gray-400 mt-1">
-          Simulate a point-of-sale terminal payment to test policy approval or blocking rules.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            Pay with PASS
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">
+            Simulate a point-of-sale checkout to test policy approval, blocking, or pay real crypto with your wallet.
+          </p>
+        </div>
+
+        {!isConnected && (
+          <button
+            onClick={openModal}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold border border-white/10 transition self-start"
+          >
+            <Wallet className="w-3.5 h-3.5 text-emerald-400" />
+            Connect Real Wallet
+          </button>
+        )}
       </div>
 
       <div className="glass-card p-6 sm:p-8 rounded-2xl border border-white/10 space-y-6">
@@ -278,10 +307,10 @@ export default function PayTerminalPage() {
           <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 space-y-2">
             <div className="font-bold flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              Solana Devnet Payment Confirmed!
+              Payment Confirmed by PASS!
             </div>
             <div className="text-[11px] font-mono break-all text-gray-300">
-              Tx Signature: {paymentSuccess.payment?.txSignature}
+              Tx Hash / Signature: {paymentSuccess.payment?.txSignature}
             </div>
             <div className="text-[11px] text-emerald-400">
               New Remaining Balance: ${paymentSuccess.pass?.remaining?.toFixed(2)} USDC
@@ -311,7 +340,11 @@ export default function PayTerminalPage() {
             disabled={isPaying}
             className="flex-1 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs shadow-lg shadow-emerald-500/20 transition disabled:opacity-50"
           >
-            {isPaying ? "Transacting on Devnet..." : "2. Execute Payment"}
+            {isPaying
+              ? "Opening Wallet Popup..."
+              : isConnected
+              ? `2. Pay with ${walletName || "Wallet"}`
+              : "2. Execute Payment"}
           </button>
         </div>
       </div>

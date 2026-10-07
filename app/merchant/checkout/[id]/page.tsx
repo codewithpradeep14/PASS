@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
+import { useUnifiedWallet } from "@/lib/wallet/UnifiedWalletContext";
 import {
   ShoppingBag,
   CheckCircle2,
@@ -14,12 +15,14 @@ import {
   ShieldCheck,
   Receipt,
   Sparkles,
+  Wallet,
 } from "lucide-react";
 import { PassCategory } from "@/types";
 
 export default function MerchantCheckoutPage() {
   const params = useParams();
   const id = params?.id as string;
+  const { isConnected, address, walletName, sendPayment, openModal } = useUnifiedWallet();
 
   const [passes, setPasses] = useState<any[]>([]);
   const [selectedPassId, setSelectedPassId] = useState<string>("");
@@ -27,7 +30,6 @@ export default function MerchantCheckoutPage() {
   const [checkoutResult, setCheckoutResult] = useState<any>(null);
   const [receiptResult, setReceiptResult] = useState<any>(null);
 
-  // Cart configurations depending on checkout id
   const isGamingStore = id === "4" || id === "m_4" || id?.includes("game");
 
   const merchantData = isGamingStore
@@ -59,7 +61,6 @@ export default function MerchantCheckoutPage() {
           setPasses(d.passes);
           setSelectedPassId(d.passes[0].id);
         } else {
-          // Default demo pass
           const sample = {
             id: "grocery_pass_01",
             category: "GROCERIES",
@@ -83,6 +84,34 @@ export default function MerchantCheckoutPage() {
     setReceiptResult(null);
 
     try {
+      // First check if policy allows it
+      const checkRes = await fetch("/api/payment/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          passId: selectedPass?.id,
+          merchantCategory: merchantData.category,
+          amount: merchantData.total,
+          recipient: selectedPass?.recipientWallet || address || "Bob",
+        }),
+      });
+      const checkData = await checkRes.json();
+
+      let realTxHash: string | undefined = undefined;
+
+      // Only trigger wallet signing if PASS policy APPROVES!
+      // This protects the user from signing unauthorized transactions!
+      if (checkData.allowed && isConnected && address) {
+        const tx = await sendPayment({
+          to: address,
+          amount: merchantData.total,
+          memo: `PAY:${merchantData.name}:${merchantData.category}`,
+        });
+        if (tx.success && tx.txHash) {
+          realTxHash = tx.txHash;
+        }
+      }
+
       const res = await fetch("/api/payment/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,8 +120,9 @@ export default function MerchantCheckoutPage() {
           merchantName: merchantData.name,
           merchantCategory: merchantData.category,
           amount: merchantData.total,
-          recipient: selectedPass?.recipientWallet || "Recipient",
+          recipient: selectedPass?.recipientWallet || address || "Recipient",
           description: `Checkout at ${merchantData.name}`,
+          txSignature: realTxHash,
           receiptItems: merchantData.items.map((i) => i.name),
         }),
       });
@@ -185,7 +215,11 @@ export default function MerchantCheckoutPage() {
               className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-sm shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50"
             >
               <CreditCard className="w-4 h-4" />
-              {isProcessing ? "Evaluating Policy & Transacting..." : "Pay with PASS"}
+              {isProcessing
+                ? "Checking Policy & Authorizing..."
+                : isConnected
+                ? `Pay with PASS (${walletName || "Wallet"})`
+                : "Pay with PASS"}
             </button>
           </div>
 
@@ -206,7 +240,7 @@ export default function MerchantCheckoutPage() {
                   <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs space-y-2">
                     <div className="font-bold text-emerald-400 flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4" />
-                      Payment Approved & Confirmed!
+                      Payment Approved & Settled!
                     </div>
                     <p className="text-emerald-200 text-[11px] leading-relaxed">
                       Merchant category <span className="font-bold">{merchantData.category}</span> matches authorized PASS policy.
@@ -227,16 +261,6 @@ export default function MerchantCheckoutPage() {
                       </p>
                     </div>
                   )}
-
-                  <a
-                    href="https://explorer.solana.com/?cluster=devnet"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:underline pt-1 font-mono"
-                  >
-                    View On Solana Devnet Explorer
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -257,7 +281,7 @@ export default function MerchantCheckoutPage() {
 
                   <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 text-[11px] text-gray-400">
                     <span className="font-semibold text-white block mb-0.5">Safety Guarantee:</span>
-                    Zero funds were deducted from your wallet. The smart contract blocked the transaction before settlement.
+                    Zero funds were deducted from your wallet. The policy blocked the transaction before wallet signing.
                   </div>
                 </div>
               )}

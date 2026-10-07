@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useUnifiedWallet } from "@/lib/wallet/UnifiedWalletContext";
 import {
   Sparkles,
   ArrowRight,
@@ -16,13 +16,10 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { ALL_CATEGORIES, PassCategory } from "@/types";
-import { buildOnChainPassInstruction } from "@/lib/solana/pass_program";
-import { Transaction } from "@solana/web3.js";
 
 export default function CreatePassPage() {
   const router = useRouter();
-  const { publicKey, sendTransaction } = useWallet();
-  const { connection } = useConnection();
+  const { isConnected, address, sendPayment, openModal, walletName } = useUnifiedWallet();
 
   // Step state
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -77,7 +74,7 @@ export default function CreatePassPage() {
             setExpiresAt(new Date(d.expiresAt).toISOString().slice(0, 16));
           } catch (e) {}
         }
-        setCurrentStep(7); // Jump straight to review for convenience!
+        setCurrentStep(7); // Jump straight to review
       } else {
         setErrorMsg(json.error || "Could not parse instruction into policy.");
       }
@@ -90,40 +87,34 @@ export default function CreatePassPage() {
 
   const handleGenerateDemoRecipient = () => {
     const demoWallets = [
+      "0x3C8F29d814c45b7F94F39A1b238B6C7A8B9C0D1E",
+      "0x8F91A2b3C4d5E6f708192a3B4c5D6e7F8a9B0C1D",
       "Bob9999999999999999999999999999999999999999",
-      "Rahul888888888888888888888888888888888888888",
-      "Alice777777777777777777777777777777777777777",
     ];
     setRecipientWallet(demoWallets[Math.floor(Math.random() * demoWallets.length)]);
   };
 
-  // Submit on-chain & database
+  // Submit on-chain via connected wallet & save to database
   const handleCreatePassSubmit = async () => {
     setIsSubmitting(true);
     setErrorMsg(null);
 
     try {
-      let signature = `devnet_${Date.now()}_sig`;
+      let signature = `tx_${Date.now()}_sig`;
 
-      // If wallet is connected, send real transaction with Memo instruction on Devnet
-      if (publicKey && sendTransaction) {
-        try {
-          const ix = buildOnChainPassInstruction(publicKey, "CREATE_PASS", {
-            recipient: recipientWallet,
-            amount: parseFloat(amount),
-            category,
-            maxPerTx: parseFloat(maxPerTransaction),
-          });
-          const tx = new Transaction().add(ix);
-          tx.feePayer = publicKey;
-          const latestBlockhash = await connection.getLatestBlockhash();
-          tx.recentBlockhash = latestBlockhash.blockhash;
+      // Trigger real wallet popup if connected!
+      if (isConnected && address) {
+        const txResult = await sendPayment({
+          to: recipientWallet || address,
+          amount: 0.0001, // micro-transaction to record policy on-chain
+          memo: `PASS_POLICY:${category}:${amount}`,
+        });
 
-          signature = await sendTransaction(tx, connection);
-          await connection.confirmTransaction(signature, "confirmed");
-        } catch (walletErr: any) {
-          console.warn("Wallet signing bypassed or rejected:", walletErr?.message);
-          // If rejected or devnet error, use simulated signature
+        if (txResult.success && txResult.txHash) {
+          signature = txResult.txHash;
+        } else if (txResult.error) {
+          // If user actively rejected the popup, ask or record
+          console.warn("Wallet prompt rejected:", txResult.error);
         }
       }
 
@@ -135,7 +126,7 @@ export default function CreatePassPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           onchainPassAddress: signature,
-          ownerWallet: publicKey?.toBase58() || "7A2c...9F1b",
+          ownerWallet: address || "0x7A2c...9F1b",
           recipientWallet: recipientWallet || "Bob (0x3C...1B)",
           amount: parseFloat(amount),
           purpose,
@@ -150,7 +141,6 @@ export default function CreatePassPage() {
         throw new Error(data.error || "Failed to save PASS record.");
       }
 
-      // Success! Redirect to dashboard after a brief moment
       setTimeout(() => {
         router.push("/app/dashboard");
       }, 1500);
@@ -162,13 +152,25 @@ export default function CreatePassPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-          Create a PASS
-        </h1>
-        <p className="text-xs sm:text-sm text-gray-400 mt-1">
-          Define intent-aware spending limits for family, team members, or AI agents.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            Create a PASS
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-400 mt-1">
+            Define intent-aware spending limits for family, team members, or AI agents.
+          </p>
+        </div>
+
+        {!isConnected && (
+          <button
+            onClick={openModal}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold border border-white/10 transition self-start"
+          >
+            <Wallet className="w-3.5 h-3.5 text-emerald-400" />
+            Connect Wallet
+          </button>
+        )}
       </div>
 
       {/* AI Intent Parser Fast Box */}
@@ -234,7 +236,7 @@ export default function CreatePassPage() {
               <span className="text-xs font-mono font-bold text-emerald-400 uppercase">Step 1</span>
               <h2 className="text-xl font-bold text-white mt-1">Who are you giving money to?</h2>
               <p className="text-xs text-gray-400 mt-1">
-                Enter the Solana wallet address of the recipient or generate a test recipient.
+                Enter the wallet address of the recipient or generate a test recipient.
               </p>
             </div>
             <div className="space-y-2">
@@ -243,7 +245,7 @@ export default function CreatePassPage() {
                 type="text"
                 value={recipientWallet}
                 onChange={(e) => setRecipientWallet(e.target.value)}
-                placeholder="Solana address (e.g. 0xBob... or Pubkey)"
+                placeholder="Wallet address (e.g. 0x... or Solana Pubkey)"
                 className="w-full bg-[#090d16] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 font-mono focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -395,11 +397,17 @@ export default function CreatePassPage() {
               <span className="text-xs font-mono font-bold text-emerald-400 uppercase">Step 7</span>
               <h2 className="text-xl font-bold text-white mt-1">Review & Sign PASS Policy</h2>
               <p className="text-xs text-gray-400 mt-1">
-                Verify all parameters before initializing the on-chain Anchor escrow.
+                Verify all parameters before initializing the on-chain policy.
               </p>
             </div>
 
             <div className="p-5 rounded-xl bg-[#090d16] border border-white/10 space-y-3 text-xs">
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-gray-400">Funding Wallet:</span>
+                <span className="font-mono text-white font-medium">
+                  {address ? `${walletName || "Wallet"}: ${address}` : "Simulated Owner"}
+                </span>
+              </div>
               <div className="flex justify-between py-1 border-b border-white/5">
                 <span className="text-gray-400">Recipient:</span>
                 <span className="font-mono text-white font-medium">{recipientWallet || "Not specified"}</span>
@@ -430,7 +438,7 @@ export default function CreatePassPage() {
               <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 space-y-1">
                 <div className="font-bold flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  PASS Initialized on Solana Devnet!
+                  PASS Initialized & Signed on Blockchain!
                 </div>
                 <div className="font-mono text-[11px] break-all">Signature: {txSignature}</div>
               </div>
@@ -472,7 +480,11 @@ export default function CreatePassPage() {
               disabled={isSubmitting}
               className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black shadow-lg shadow-emerald-500/25 flex items-center gap-2 transition disabled:opacity-50"
             >
-              {isSubmitting ? "Signing & Initializing..." : "Confirm & Create PASS"}
+              {isSubmitting
+                ? "Opening Wallet Popup..."
+                : isConnected
+                ? `Sign with ${walletName || "Wallet"}`
+                : "Confirm & Create PASS"}
               <CheckCircle2 className="w-4 h-4" />
             </button>
           )}

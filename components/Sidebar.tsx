@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useUnifiedWallet } from "@/lib/wallet/UnifiedWalletContext";
 import {
   LayoutDashboard,
   PlusCircle,
@@ -16,12 +15,13 @@ import {
   ShoppingBag,
   UserCheck,
   ExternalLink,
-  ShieldCheck,
+  Wallet,
+  LogOut,
 } from "lucide-react";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { publicKey } = useWallet();
+  const { isConnected, displayAddress, walletName, walletIcon, balance, network, openModal, disconnect } = useUnifiedWallet();
 
   const navItems = [
     { name: "Dashboard", href: "/app/dashboard", icon: LayoutDashboard },
@@ -47,7 +47,9 @@ export function Sidebar() {
             </div>
             <div>
               <div className="font-extrabold text-white text-base tracking-tight">PASS</div>
-              <div className="text-[10px] text-emerald-400 font-mono">Solana Devnet</div>
+              <div className="text-[10px] text-emerald-400 font-mono">
+                {network || "Solana Devnet"}
+              </div>
             </div>
           </Link>
         </div>
@@ -87,19 +89,38 @@ export function Sidebar() {
         <div className="mb-3 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2 text-gray-400">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-mono text-[11px]">Devnet Connected</span>
+            <span className="font-mono text-[11px]">{walletName ? `${walletName} Active` : "Ready to Connect"}</span>
           </div>
-          <a
-            href="https://explorer.solana.com/?cluster=devnet"
-            target="_blank"
-            rel="noreferrer"
-            className="text-gray-500 hover:text-gray-300"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
         </div>
 
-        <WalletMultiButton className="!w-full !justify-center !bg-white/10 hover:!bg-white/15 !text-white !font-medium !h-9 !rounded-lg !text-xs" />
+        {isConnected ? (
+          <div className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {walletIcon && <img src={walletIcon} alt="" className="w-4 h-4 object-contain" />}
+                <span className="font-mono text-xs font-bold text-white">{displayAddress}</span>
+              </div>
+              <button
+                onClick={disconnect}
+                className="text-gray-400 hover:text-rose-400 transition"
+                title="Disconnect"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {balance && (
+              <div className="text-[11px] font-mono text-emerald-400">{balance}</div>
+            )}
+          </div>
+        ) : (
+          <button
+            onClick={openModal}
+            className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 transition"
+          >
+            <Wallet className="w-3.5 h-3.5" />
+            Connect Wallet
+          </button>
+        )}
       </div>
     </aside>
   );

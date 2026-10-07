@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { WalletContextProvider } from "@/components/WalletContextProvider";
+import { UnifiedWalletProvider } from "@/lib/wallet/UnifiedWalletContext";
+import { WalletModal } from "@/components/WalletModal";
 
 export const metadata: Metadata = {
   title: "PASS — Money with instructions",
@@ -17,7 +19,10 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="bg-[#080c14] text-gray-100 antialiased selection:bg-emerald-500/20 selection:text-emerald-400">
         <WalletContextProvider>
-          {children}
+          <UnifiedWalletProvider>
+            {children}
+            <WalletModal />
+          </UnifiedWalletProvider>
         </WalletContextProvider>
       </body>
     </html>

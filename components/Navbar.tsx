@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { Shield, Sparkles, ArrowRight, Zap } from "lucide-react";
+import { useUnifiedWallet } from "@/lib/wallet/UnifiedWalletContext";
+import { Shield, Sparkles, ArrowRight, Wallet, LogOut } from "lucide-react";
 
 export function Navbar() {
   const pathname = usePathname();
+  const { isConnected, displayAddress, walletName, walletIcon, balance, openModal, disconnect } = useUnifiedWallet();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-[#080c14]/80 backdrop-blur-md">
@@ -21,7 +22,7 @@ export function Navbar() {
               PASS
             </span>
             <span className="text-[10px] text-emerald-400 font-mono -mt-1 tracking-wider uppercase">
-              Solana Devnet
+              Money with instructions
             </span>
           </div>
         </Link>
@@ -53,16 +54,42 @@ export function Navbar() {
           </Link>
         </nav>
 
-        {/* Action & Wallet */}
+        {/* Action & Unified Wallet Button */}
         <div className="flex items-center gap-3">
           <Link
             href="/app/dashboard"
-            className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-white/10 hover:bg-white/15 text-white border border-white/10 transition"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/15 text-white border border-white/10 transition"
           >
-            Launch App
-            <ArrowRight className="w-4 h-4" />
+            Dashboard
+            <ArrowRight className="w-3.5 h-3.5" />
           </Link>
-          <WalletMultiButton className="!bg-emerald-500 hover:!bg-emerald-400 !text-black !font-semibold !h-9 !rounded-lg !text-xs !px-3" />
+
+          {isConnected ? (
+            <div className="flex items-center gap-2 bg-[#0d131f] border border-white/10 px-3 py-1.5 rounded-xl text-xs">
+              {walletIcon && (
+                <img src={walletIcon} alt="" className="w-4 h-4 object-contain" />
+              )}
+              <div className="text-left font-mono">
+                <div className="text-white font-bold text-[11px]">{displayAddress}</div>
+                {balance && <div className="text-[10px] text-emerald-400 -mt-0.5">{balance}</div>}
+              </div>
+              <button
+                onClick={disconnect}
+                title="Disconnect Wallet"
+                className="ml-1 p-1 rounded hover:bg-white/10 text-gray-400 hover:text-rose-400 transition"
+              >
+                <LogOut className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={openModal}
+              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition"
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              Connect Wallet
+            </button>
+          )}
         </div>
       </div>
     </header>
