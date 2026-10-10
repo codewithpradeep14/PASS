@@ -17,6 +17,8 @@ import {
   ExternalLink,
   Wallet,
   LogOut,
+  Coins,
+  Layers,
 } from "lucide-react";
 
 export function Sidebar() {
@@ -28,6 +30,8 @@ export function Sidebar() {
     { name: "Create a PASS", href: "/app/create", icon: PlusCircle },
     { name: "My PASSes", href: "/app/passes", icon: FileCheck },
     { name: "Pay with PASS", href: "/app/pay", icon: CreditCard },
+    { name: "Project Treasury", href: "/app/treasury", icon: Coins },
+    { name: "Integrations", href: "/app/integrations", icon: Layers },
     { name: "Recipient View", href: "/recipient", icon: UserCheck },
     { name: "Merchant Terminal", href: "/merchant", icon: ShoppingBag },
     { name: "Payment History", href: "/app/history", icon: History },

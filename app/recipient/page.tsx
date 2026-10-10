@@ -14,6 +14,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { PassRecord } from "@/types";
+import { ExpirationTimer } from "@/components/ExpirationTimer";
 
 export default function RecipientDashboardPage() {
   const { publicKey } = useWallet();
@@ -133,9 +134,9 @@ export default function RecipientDashboardPage() {
                     <span className="text-gray-500 block">Max Per Transaction</span>
                     <span className="font-mono text-gray-200">${pass.maxPerTransaction.toFixed(2)}</span>
                   </div>
-                  <div className="p-3 rounded-lg bg-white/5 col-span-2 sm:col-span-1">
-                    <span className="text-gray-500 block">Valid Until</span>
-                    <span className="text-gray-200">{new Date(pass.expiresAt).toLocaleDateString()}</span>
+                  <div className="p-3 rounded-lg bg-white/5 col-span-2 sm:col-span-1 flex flex-col justify-between">
+                    <span className="text-gray-500 block mb-1">Time Remaining</span>
+                    <ExpirationTimer expiresAt={pass.expiresAt} variant="compact" />
                   </div>
                 </div>
 

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { CreditCard, CheckCircle2, XCircle, ArrowLeft, ExternalLink } from "lucide-react";
 import { ALL_CATEGORIES, PassCategory } from "@/types";
+import { ExpirationTimer } from "@/components/ExpirationTimer";
 
 export default function RecipientPassCheckoutPage() {
   const params = useParams();
@@ -76,6 +77,10 @@ export default function RecipientPassCheckoutPage() {
               Authorized Category: <span className="text-emerald-400 font-bold">{pass?.category || "GROCERIES"}</span> • Remaining: ${pass?.remaining?.toFixed(2) || "100.00"}
             </p>
           </div>
+
+          {pass?.expiresAt && (
+            <ExpirationTimer expiresAt={pass.expiresAt} variant="banner" />
+          )}
 
           <div className="space-y-4">
             <div className="space-y-2">

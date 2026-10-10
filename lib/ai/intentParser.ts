@@ -107,26 +107,40 @@ export function parseIntentDeterministically(instruction: string): IntentParseRe
     ? Math.min(amount, parseFloat(maxTxMatch[1]))
     : Math.max(10, Math.min(amount, Math.round(amount * 0.5)));
 
-  // 5. Expiration Calculation
+  // 5. Expiration Calculation (hours, minutes, days, or day-of-week)
   const now = new Date();
-  let daysToAdd = 7; // Default 1 week
+  let expiresDate: Date;
 
-  if (lower.includes("today")) {
-    daysToAdd = 0;
-  } else if (lower.includes("tomorrow")) {
-    daysToAdd = 1;
-  } else if (lower.includes("sunday")) {
-    const currentDay = now.getDay();
-    daysToAdd = (7 - currentDay) % 7 || 7;
-  } else if (lower.includes("friday")) {
-    const currentDay = now.getDay();
-    daysToAdd = (5 - currentDay + 7) % 7 || 7;
-  } else if (lower.includes("month")) {
-    daysToAdd = 30;
+  const hoursMatch = lower.match(/(?:for|in|valid\s+for)?\s*(\d+)\s*(?:hours?|hrs?)/i);
+  const minutesMatch = lower.match(/(?:for|in|valid\s+for)?\s*(\d+)\s*(?:minutes?|mins?)/i);
+  const oneHourMatch = lower.match(/(?:for|in|valid\s+for)\s*(?:an?)\s*(?:hour|hr)/i);
+
+  if (hoursMatch) {
+    const hours = parseInt(hoursMatch[1], 10);
+    expiresDate = new Date(now.getTime() + hours * 60 * 60 * 1000);
+  } else if (oneHourMatch) {
+    expiresDate = new Date(now.getTime() + 1 * 60 * 60 * 1000);
+  } else if (minutesMatch) {
+    const minutes = parseInt(minutesMatch[1], 10);
+    expiresDate = new Date(now.getTime() + minutes * 60 * 1000);
+  } else {
+    let daysToAdd = 7; // Default 1 week
+    if (lower.includes("today")) {
+      daysToAdd = 0;
+    } else if (lower.includes("tomorrow")) {
+      daysToAdd = 1;
+    } else if (lower.includes("sunday")) {
+      const currentDay = now.getDay();
+      daysToAdd = (7 - currentDay) % 7 || 7;
+    } else if (lower.includes("friday")) {
+      const currentDay = now.getDay();
+      daysToAdd = (5 - currentDay + 7) % 7 || 7;
+    } else if (lower.includes("month")) {
+      daysToAdd = 30;
+    }
+    expiresDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+    expiresDate.setHours(23, 59, 59, 999);
   }
-
-  const expiresDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-  expiresDate.setHours(23, 59, 59, 999);
 
   const parsedData: AIParsedIntent = {
     amount,

@@ -14,6 +14,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { PassCategory, ALL_CATEGORIES } from "@/types";
+import { ExpirationTimer } from "@/components/ExpirationTimer";
 
 export default function PayTerminalPage() {
   const { isConnected, address, walletName, sendPayment, openModal } = useUnifiedWallet();
@@ -185,6 +186,11 @@ export default function PayTerminalPage() {
             ))}
           </select>
         </div>
+
+        {/* Live Expiration Countdown for Selected PASS */}
+        {selectedPass?.expiresAt && (
+          <ExpirationTimer expiresAt={selectedPass.expiresAt} variant="banner" />
+        )}
 
         {/* Merchant preset quick pills */}
         <div className="space-y-2">

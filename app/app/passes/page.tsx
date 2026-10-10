@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PlusCircle, Search, Filter, Clock, ExternalLink, ShieldCheck } from "lucide-react";
 import { PassRecord } from "@/types";
+import { ExpirationTimer } from "@/components/ExpirationTimer";
 
 export default function PassesListPage() {
   const [passes, setPasses] = useState<PassRecord[]>([]);
@@ -174,10 +175,7 @@ export default function PassesListPage() {
 
                 <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1">
                   <span>Max/tx: ${p.maxPerTransaction.toFixed(2)}</span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {new Date(p.expiresAt).toLocaleDateString()}
-                  </span>
+                  <ExpirationTimer expiresAt={p.expiresAt} variant="compact" />
                 </div>
               </div>
             </div>

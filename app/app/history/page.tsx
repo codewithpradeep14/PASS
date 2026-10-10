@@ -1,7 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, XCircle, ExternalLink, Receipt, Filter } from "lucide-react";
+import Link from "next/link";
+import {
+  CheckCircle2,
+  XCircle,
+  ExternalLink,
+  Receipt,
+  Filter,
+  History,
+  CreditCard,
+  PlusCircle,
+  Sparkles,
+  ArrowRight,
+} from "lucide-react";
 
 export default function HistoryPage() {
   const [payments, setPayments] = useState<any[]>([]);
@@ -12,50 +24,16 @@ export default function HistoryPage() {
     fetch("/api/history")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success && data.payments?.length > 0) {
+        if (data.success && Array.isArray(data.payments)) {
           setPayments(data.payments);
         } else {
-          // Default history sample
-          setPayments([
-            {
-              id: "pmt_001",
-              amount: 32.5,
-              category: "GROCERIES",
-              description: "FreshMart Supermarket • Vegetables & Bread",
-              status: "SUCCESS",
-              txSignature: "5KtP...Wv8s",
-              createdAt: new Date().toISOString(),
-              receipts: [
-                {
-                  status: "MATCH",
-                  confidence: 0.98,
-                  analysis: "Items match authorized GROCERIES category.",
-                },
-              ],
-            },
-            {
-              id: "pmt_002",
-              amount: 60.0,
-              category: "ENTERTAINMENT",
-              description: "Apex Gaming & VR Zone",
-              status: "BLOCKED",
-              blockReason: "POLICY VIOLATION: PASS is restricted to GROCERIES.",
-              txSignature: null,
-              createdAt: new Date(Date.now() - 3600000).toISOString(),
-            },
-            {
-              id: "pmt_003",
-              amount: 9.5,
-              category: "GROCERIES",
-              description: "Corner Market • Dairy",
-              status: "SUCCESS",
-              txSignature: "2M7x...Lp4a",
-              createdAt: new Date(Date.now() - 86400000).toISOString(),
-            },
-          ]);
+          setPayments([]);
         }
       })
-      .catch((e) => console.error(e))
+      .catch((e) => {
+        console.error("Failed to load payments:", e);
+        setPayments([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -72,35 +50,79 @@ export default function HistoryPage() {
             Payment History
           </h1>
           <p className="text-xs sm:text-sm text-gray-400 mt-1">
-            Complete cryptographic audit trail of approved payments and blocked violations.
+            Real-time cryptographic audit trail of approved payments, on-chain signatures, and blocked violations.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {["ALL", "SUCCESS", "BLOCKED"].map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                filter === f
-                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                  : "bg-white/5 text-gray-400 hover:text-white border border-white/5"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
+        {payments.length > 0 && (
+          <div className="flex items-center gap-2">
+            {["ALL", "SUCCESS", "BLOCKED"].map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  filter === f
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                    : "bg-white/5 text-gray-400 hover:text-white border border-white/5"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="glass-card rounded-2xl border border-white/10 overflow-hidden">
-        <div className="divide-y divide-white/5">
-          {filtered.length === 0 ? (
-            <div className="p-8 text-center text-xs text-gray-500">
-              No transactions found matching this filter.
+        {loading ? (
+          <div className="p-12 text-center text-xs text-gray-400 font-mono">
+            Loading cryptographic audit logs...
+          </div>
+        ) : payments.length === 0 ? (
+          /* Clean New User Empty State */
+          <div className="p-12 text-center space-y-5 max-w-lg mx-auto">
+            <div className="w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mx-auto text-emerald-400 shadow-xl">
+              <History className="w-7 h-7" />
             </div>
-          ) : (
-            filtered.map((item) => (
+
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-white">No Payments Executed Yet</h3>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                As a new user, your audit trail starts fresh. When you or your recipient make a payment using a PASS, every transaction, category rule evaluation, and Solana Devnet signature will be immutably recorded here.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <Link
+                href="/app/create"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition"
+              >
+                <PlusCircle className="w-4 h-4" />
+                Create a PASS
+              </Link>
+              <Link
+                href="/app/pay"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs border border-white/10 flex items-center justify-center gap-2 transition"
+              >
+                <CreditCard className="w-4 h-4" />
+                Pay with PASS
+              </Link>
+              <Link
+                href="/demo/simulation"
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-medium text-xs border border-emerald-500/20 flex items-center justify-center gap-1.5 transition"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                1-Click Demo
+              </Link>
+            </div>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center text-xs text-gray-500">
+            No transactions found matching the &quot;{filter}&quot; filter.
+          </div>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {filtered.map((item) => (
               <div
                 key={item.id}
                 className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/[0.02] transition"
@@ -176,9 +198,9 @@ export default function HistoryPage() {
                   )}
                 </div>
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

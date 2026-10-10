@@ -15,6 +15,7 @@ import {
   Receipt,
   AlertTriangle,
 } from "lucide-react";
+import { ExpirationTimer } from "@/components/ExpirationTimer";
 
 export default function PassDetailPage() {
   const params = useParams();
@@ -180,6 +181,9 @@ export default function PassDetailPage() {
         </div>
       </div>
 
+      {/* Live Expiration Countdown Banner */}
+      <ExpirationTimer expiresAt={pass.expiresAt} variant="banner" />
+
       {/* Grid Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="glass-card p-6 rounded-2xl border border-white/10 space-y-3">
@@ -209,9 +213,9 @@ export default function PassDetailPage() {
             <span className="text-gray-400">Max Per Tx:</span>
             <span className="font-mono text-white">${pass.maxPerTransaction.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between py-1">
-            <span className="text-gray-400">Expires:</span>
-            <span className="text-gray-300">{new Date(pass.expiresAt).toLocaleDateString()}</span>
+          <div className="flex justify-between py-1 items-center">
+            <span className="text-gray-400">Live Timer:</span>
+            <ExpirationTimer expiresAt={pass.expiresAt} variant="compact" />
           </div>
         </div>
 

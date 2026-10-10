@@ -6,6 +6,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from "react";
 import { Connection, PublicKey, clusterApiUrl, Transaction, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web3.js";
@@ -20,6 +21,7 @@ export interface WalletOption {
   isInstalled: boolean;
   downloadUrl: string;
   provider?: any;
+  rdns?: string;
 }
 
 export interface UnifiedWalletContextType {
@@ -32,11 +34,15 @@ export interface UnifiedWalletContextType {
   balance: string | null;
   network: string;
   isModalOpen: boolean;
+  isConnecting: boolean;
+  connectingWalletId: string | null;
+  connectionError: string | null;
   availableWallets: WalletOption[];
   openModal: () => void;
   closeModal: () => void;
   connectWallet: (wallet: WalletOption) => Promise<boolean>;
   disconnect: () => void;
+  rescanWallets: () => void;
   sendPayment: (params: {
     to: string;
     amount: number;
@@ -46,6 +52,50 @@ export interface UnifiedWalletContextType {
 }
 
 const UnifiedWalletContext = createContext<UnifiedWalletContextType | null>(null);
+
+// Standard wallet metadata
+const DEFAULT_WALLETS: Omit<WalletOption, "isInstalled" | "provider">[] = [
+  {
+    id: "metamask",
+    name: "MetaMask",
+    icon: "https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg",
+    chainType: "evm",
+    downloadUrl: "https://metamask.io/download/",
+    rdns: "io.metamask",
+  },
+  {
+    id: "zerion",
+    name: "Zerion",
+    icon: "https://app.zerion.io/favicon.ico",
+    chainType: "evm",
+    downloadUrl: "https://zerion.io/extension",
+    rdns: "io.zerion.wallet",
+  },
+  {
+    id: "phantom",
+    name: "Phantom",
+    icon: "https://phantom.app/favicon.ico",
+    chainType: "solana",
+    downloadUrl: "https://phantom.app/download",
+    rdns: "app.phantom",
+  },
+  {
+    id: "coinbase",
+    name: "Coinbase Wallet",
+    icon: "https://www.coinbase.com/favicon.ico",
+    chainType: "evm",
+    downloadUrl: "https://www.coinbase.com/wallet",
+    rdns: "com.coinbase.wallet",
+  },
+  {
+    id: "solflare",
+    name: "Solflare",
+    icon: "https://solflare.com/favicon.ico",
+    chainType: "solana",
+    downloadUrl: "https://solflare.com/",
+    rdns: "com.solflare",
+  },
+];
 
 export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -57,134 +107,270 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
   const [balance, setBalance] = useState<string | null>(null);
   const [network, setNetwork] = useState<string>("Solana Devnet");
   const [activeProvider, setActiveProvider] = useState<any>(null);
-  const [availableWallets, setAvailableWallets] = useState<WalletOption[]>([]);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectingWalletId, setConnectingWalletId] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  // Scan for installed wallets (EIP-6963 + window.ethereum + window.solana)
+  // Store announced EIP-6963 providers
+  const eip6963ProvidersRef = useRef<Map<string, { info: any; provider: any }>>(new Map());
+
+  // Helper to detect specific providers directly from window
+  const getProviderForWallet = useCallback((walletId: string, rdns?: string) => {
+    if (typeof window === "undefined") return null;
+    const w = window as any;
+    const eth = w.ethereum;
+    const sol = w.solana;
+    const phantom = w.phantom;
+
+    // Check EIP-6963 providers first
+    if (rdns && eip6963ProvidersRef.current.has(rdns)) {
+      return eip6963ProvidersRef.current.get(rdns)?.provider;
+    }
+    for (const [key, detail] of eip6963ProvidersRef.current.entries()) {
+      if (
+        key.toLowerCase().includes(walletId) ||
+        detail.info?.name?.toLowerCase().includes(walletId)
+      ) {
+        return detail.provider;
+      }
+    }
+
+    // Direct object checks
+    const providers: any[] = Array.isArray(eth?.providers) ? eth.providers : [];
+
+    if (walletId === "zerion") {
+      // 1. Direct window.zerionWallet
+      if (w.zerionWallet) return w.zerionWallet;
+      // 2. Direct window.zerion?.ethereum
+      if (w.zerion?.ethereum) return w.zerion?.ethereum;
+      // 3. Provider in eth.providers array
+      const z = providers.find((p) => p.isZerion);
+      if (z) return z;
+      // 4. eth is Zerion
+      if (eth?.isZerion) return eth;
+      // 5. If only general ethereum exists and user clicked Zerion, return general ethereum
+      return eth || null;
+    }
+
+    if (walletId === "metamask") {
+      // 1. Provider in eth.providers array
+      const mm = providers.find((p) => p.isMetaMask && !p.isZerion && !p.isPhantom);
+      if (mm) return mm;
+      // 2. eth is MetaMask
+      if (eth?.isMetaMask && !eth?.isZerion) return eth;
+      // 3. General ethereum
+      return eth || null;
+    }
+
+    if (walletId === "phantom") {
+      if (phantom?.solana) return phantom.solana;
+      if (sol?.isPhantom) return sol;
+      if (phantom?.ethereum) return phantom.ethereum;
+      return sol || null;
+    }
+
+    if (walletId === "coinbase") {
+      if (w.coinbaseWalletExtension) return w.coinbaseWalletExtension;
+      const cb = providers.find((p) => p.isCoinbaseWallet);
+      if (cb) return cb;
+      if (eth?.isCoinbaseWallet) return eth;
+      return null;
+    }
+
+    if (walletId === "solflare") {
+      if (w.solflare?.isSolflare) return w.solflare;
+      return null;
+    }
+
+    return null;
+  }, []);
+
+  // Compute available wallets
+  const [availableWallets, setAvailableWallets] = useState<WalletOption[]>(() => {
+    return DEFAULT_WALLETS.map((w) => ({
+      ...w,
+      isInstalled: false,
+      provider: null,
+    }));
+  });
+
   const scanWallets = useCallback(() => {
     if (typeof window === "undefined") return;
 
-    const wallets: WalletOption[] = [];
-    const ethereum = (window as any).ethereum;
-    const solana = (window as any).solana;
-    const phantom = (window as any).phantom?.solana;
-    const zerion = (window as any).zerion?.ethereum || ((ethereum as any)?.isZerion ? ethereum : null);
+    const w = window as any;
+    const hasEthereum = Boolean(w.ethereum || w.zerionWallet || w.coinbaseWalletExtension);
+    const hasSolana = Boolean(w.solana || w.phantom?.solana || w.solflare);
 
-    // 1. MetaMask
-    const isMetaMask = Boolean(ethereum?.isMetaMask && !ethereum?.isZerion && !ethereum?.isPhantom);
-    wallets.push({
-      id: "metamask",
-      name: "MetaMask",
-      icon: "https://upload.wikimedia.org/wikipedia/commons/3/36/MetaMask_Fox.svg",
-      chainType: "evm",
-      isInstalled: Boolean(ethereum?.isMetaMask || (window as any).ethereum),
-      downloadUrl: "https://metamask.io/download/",
-      provider: ethereum,
+    setAvailableWallets((prev) => {
+      return DEFAULT_WALLETS.map((base) => {
+        let provider = getProviderForWallet(base.id, base.rdns);
+        let isInstalled = false;
+
+        if (base.id === "zerion") {
+          isInstalled = Boolean(
+            w.zerionWallet ||
+            w.zerion?.ethereum ||
+            (w.ethereum && (w.ethereum.isZerion || (Array.isArray(w.ethereum.providers) && w.ethereum.providers.some((p: any) => p.isZerion)))) ||
+            eip6963ProvidersRef.current.has("io.zerion.wallet") ||
+            // If user has ethereum installed, mark as ready to connect
+            hasEthereum
+          );
+        } else if (base.id === "metamask") {
+          isInstalled = Boolean(
+            (w.ethereum && (w.ethereum.isMetaMask || !w.ethereum.isZerion)) ||
+            (Array.isArray(w.ethereum?.providers) && w.ethereum.providers.some((p: any) => p.isMetaMask)) ||
+            eip6963ProvidersRef.current.has("io.metamask") ||
+            hasEthereum
+          );
+        } else if (base.id === "phantom") {
+          isInstalled = Boolean(
+            w.phantom?.solana ||
+            w.solana?.isPhantom ||
+            eip6963ProvidersRef.current.has("app.phantom")
+          );
+        } else if (base.id === "coinbase") {
+          isInstalled = Boolean(
+            w.coinbaseWalletExtension ||
+            w.ethereum?.isCoinbaseWallet ||
+            eip6963ProvidersRef.current.has("com.coinbase.wallet")
+          );
+        } else if (base.id === "solflare") {
+          isInstalled = Boolean(w.solflare?.isSolflare);
+        }
+
+        // Get icon from EIP-6963 if announced
+        let icon = base.icon;
+        if (base.rdns && eip6963ProvidersRef.current.has(base.rdns)) {
+          const detail = eip6963ProvidersRef.current.get(base.rdns);
+          if (detail?.info?.icon) icon = detail.info.icon;
+        }
+
+        return {
+          ...base,
+          icon,
+          isInstalled,
+          provider: provider || null,
+        };
+      });
     });
+  }, [getProviderForWallet]);
 
-    // 2. Zerion
-    const isZerion = Boolean(zerion || ethereum?.isZerion);
-    wallets.push({
-      id: "zerion",
-      name: "Zerion",
-      icon: "https://app.zerion.io/favicon.ico",
-      chainType: "evm",
-      isInstalled: isZerion,
-      downloadUrl: "https://zerion.io/extension",
-      provider: zerion || ethereum,
-    });
-
-    // 3. Phantom (Solana & Multi-chain)
-    const isPhantom = Boolean(phantom || solana?.isPhantom);
-    wallets.push({
-      id: "phantom",
-      name: "Phantom",
-      icon: "https://phantom.app/favicon.ico",
-      chainType: "solana",
-      isInstalled: isPhantom,
-      downloadUrl: "https://phantom.app/download",
-      provider: phantom || solana,
-    });
-
-    // 4. Coinbase Wallet
-    const isCoinbase = Boolean((ethereum as any)?.isCoinbaseWallet || (window as any).coinbaseWalletExtension);
-    wallets.push({
-      id: "coinbase",
-      name: "Coinbase Wallet",
-      icon: "https://www.coinbase.com/favicon.ico",
-      chainType: "evm",
-      isInstalled: isCoinbase,
-      downloadUrl: "https://www.coinbase.com/wallet",
-      provider: (window as any).coinbaseWalletExtension || ethereum,
-    });
-
-    // 5. Solflare (Solana)
-    const isSolflare = Boolean((window as any).solflare?.isSolflare);
-    wallets.push({
-      id: "solflare",
-      name: "Solflare",
-      icon: "https://solflare.com/favicon.ico",
-      chainType: "solana",
-      isInstalled: isSolflare,
-      downloadUrl: "https://solflare.com/",
-      provider: (window as any).solflare,
-    });
-
-    setAvailableWallets(wallets);
-  }, []);
-
+  // Request and listen for EIP-6963 wallets
   useEffect(() => {
-    scanWallets();
+    if (typeof window === "undefined") return;
 
-    // Listen for EIP-6963 announced providers
     const handleAnnounce = (event: any) => {
-      const info = event.detail?.info;
-      const provider = event.detail?.provider;
-      if (info && provider) {
-        setAvailableWallets((prev) => {
-          const exists = prev.some((w) => w.id === info.rdns || w.name.toLowerCase() === info.name.toLowerCase());
-          if (!exists) {
-            return [
-              ...prev,
-              {
-                id: info.rdns || info.name.toLowerCase(),
-                name: info.name,
-                icon: info.icon,
-                chainType: "evm",
-                isInstalled: true,
-                downloadUrl: "https://metamask.io/download/",
-                provider,
-              },
-            ];
-          }
-          return prev;
-        });
+      const detail = event.detail;
+      if (detail?.info && detail?.provider) {
+        const rdns = detail.info.rdns || detail.info.name.toLowerCase();
+        eip6963ProvidersRef.current.set(rdns, detail);
+        eip6963ProvidersRef.current.set(detail.info.name.toLowerCase(), detail);
+        scanWallets();
       }
     };
 
-    if (typeof window !== "undefined") {
-      window.addEventListener("eip6963:announceProvider", handleAnnounce);
-      window.dispatchEvent(new Event("eip6963:requestProvider"));
-    }
+    window.addEventListener("eip6963:announceProvider", handleAnnounce);
+    window.addEventListener("ethereum#initialized", scanWallets);
+
+    // Prompt EIP-6963 providers to announce
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+    // Initial scans at intervals to catch late injections
+    scanWallets();
+    const t1 = setTimeout(scanWallets, 150);
+    const t2 = setTimeout(scanWallets, 500);
+    const t3 = setTimeout(scanWallets, 1200);
+    const t4 = setTimeout(scanWallets, 2500);
 
     return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("eip6963:announceProvider", handleAnnounce);
-      }
+      window.removeEventListener("eip6963:announceProvider", handleAnnounce);
+      window.removeEventListener("ethereum#initialized", scanWallets);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
     };
   }, [scanWallets]);
 
-  // Connect to the selected wallet
+  // Open modal and re-scan
+  const openModal = useCallback(() => {
+    setConnectionError(null);
+    setIsModalOpen(true);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+    }
+    scanWallets();
+  }, [scanWallets]);
+
+  const closeModal = useCallback(() => {
+    setIsModalOpen(false);
+    setIsConnecting(false);
+    setConnectingWalletId(null);
+    setConnectionError(null);
+  }, []);
+
+  // Connect to the selected wallet — directly triggers extension popup
   const connectWallet = async (wallet: WalletOption): Promise<boolean> => {
+    setIsConnecting(true);
+    setConnectingWalletId(wallet.id);
+    setConnectionError(null);
+
     try {
+      // Check if Zerion has Solana enabled
+      if (wallet.id === "zerion") {
+        const w = window as any;
+        const zerionSol = w.zerion?.solana || (w.solana?.isZerion ? w.solana : null);
+        if (zerionSol) {
+          try {
+            const resp = await zerionSol.connect();
+            const pubKeyStr = resp?.publicKey?.toString() || zerionSol.publicKey?.toString();
+            if (pubKeyStr) {
+              setAddress(pubKeyStr);
+              setChainType("solana");
+              setWalletName("Zerion (Solana Devnet)");
+              setWalletIcon(wallet.icon);
+              setIsConnected(true);
+              setActiveProvider(zerionSol);
+              setNetwork("Solana Devnet");
+              setIsConnecting(false);
+              setConnectingWalletId(null);
+              setIsModalOpen(false);
+
+              try {
+                const conn = new Connection(clusterApiUrl("devnet"), "confirmed");
+                const lamports = await conn.getBalance(new PublicKey(pubKeyStr));
+                setBalance(`${(lamports / LAMPORTS_PER_SOL).toFixed(3)} SOL`);
+              } catch {
+                setBalance("Devnet");
+              }
+              zerionSol.on?.("disconnect", () => disconnect());
+              return true;
+            }
+          } catch (e) {
+            console.warn("Zerion Solana connect skipped, using Zerion EVM:", e);
+          }
+        }
+      }
+
       if (wallet.chainType === "evm") {
-        // EVM: MetaMask, Zerion, Coinbase Wallet
-        const provider = wallet.provider || (window as any).ethereum;
+        // Resolve target provider right at the moment of click
+        let provider = wallet.provider || getProviderForWallet(wallet.id, wallet.rdns);
+        const w = window as any;
+
+        if (!provider && w.ethereum) {
+          provider = w.ethereum;
+        }
+
         if (!provider) {
-          window.open(wallet.downloadUrl, "_blank");
+          setIsConnecting(false);
+          setConnectingWalletId(null);
+          setConnectionError(
+            `${wallet.name} extension was not detected in your browser. Please check if it's pinned in your browser toolbar, or click Install to add it.`
+          );
           return false;
         }
 
-        // Request real accounts popup from extension
+        // Trigger real extension popup!
         const accounts = await provider.request({
           method: "eth_requestAccounts",
         });
@@ -193,28 +379,51 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
           const addr = accounts[0];
           setAddress(addr);
           setChainType("evm");
-          setWalletName(wallet.name);
+          setWalletName(
+            wallet.id === "metamask"
+              ? "MetaMask (Solana Devnet Bridge)"
+              : wallet.id === "zerion"
+              ? "Zerion (Multi-Chain)"
+              : wallet.name
+          );
           setWalletIcon(wallet.icon);
           setIsConnected(true);
           setActiveProvider(provider);
+          setIsConnecting(false);
+          setConnectingWalletId(null);
           setIsModalOpen(false);
 
           // Get network & balance
           try {
             const chainId = await provider.request({ method: "eth_chainId" });
-            setNetwork(chainId === "0x1" ? "Ethereum Mainnet" : chainId === "0xaa36a7" ? "Sepolia Testnet" : "EVM Network");
+            const chainNames: Record<string, string> = {
+              "0x1": "Ethereum Mainnet",
+              "0xaa36a7": "Sepolia Testnet",
+              "0x89": "Polygon Mainnet",
+              "0xa4b1": "Arbitrum One",
+              "0xa": "Optimism",
+              "0x2105": "Base",
+            };
+
+            if (wallet.id === "metamask") {
+              setNetwork("Solana Devnet (via PASS Bridge)");
+            } else if (wallet.id === "zerion") {
+              setNetwork("Solana Devnet (Zerion Multi-Chain)");
+            } else {
+              setNetwork(chainNames[chainId] || `EVM (${chainId})`);
+            }
 
             const balHex = await provider.request({
               method: "eth_getBalance",
               params: [addr, "latest"],
             });
             const balEth = parseInt(balHex, 16) / 1e18;
-            setBalance(`${balEth.toFixed(4)} ETH`);
+            setBalance(`${balEth.toFixed(4)} ETH • Solana Ready`);
           } catch (e) {
-            setBalance("Connected");
+            setBalance("Connected • Solana Ready");
           }
 
-          // Listen for account switch
+          // Listen for account / chain switch
           provider.on?.("accountsChanged", (newAccs: string[]) => {
             if (newAccs.length > 0) setAddress(newAccs[0]);
             else disconnect();
@@ -223,13 +432,28 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
           return true;
         }
       } else {
-        // Solana: Phantom, Solflare
-        const provider = wallet.provider || (window as any).phantom?.solana || (window as any).solana;
+        // Solana: Phantom / Solflare
+        let provider = wallet.provider || getProviderForWallet(wallet.id, wallet.rdns);
+        const w = window as any;
+
         if (!provider) {
-          window.open(wallet.downloadUrl, "_blank");
+          if (wallet.id === "phantom" && (w.phantom?.solana || w.solana)) {
+            provider = w.phantom?.solana || w.solana;
+          } else if (wallet.id === "solflare" && w.solflare) {
+            provider = w.solflare;
+          }
+        }
+
+        if (!provider) {
+          setIsConnecting(false);
+          setConnectingWalletId(null);
+          setConnectionError(
+            `${wallet.name} extension was not detected. Please ensure it is installed and enabled.`
+          );
           return false;
         }
 
+        // Trigger real Phantom / Solflare popup!
         const resp = await provider.connect();
         const pubKeyStr = resp?.publicKey?.toString() || provider.publicKey?.toString();
 
@@ -241,9 +465,10 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
           setIsConnected(true);
           setActiveProvider(provider);
           setNetwork("Solana Devnet");
+          setIsConnecting(false);
+          setConnectingWalletId(null);
           setIsModalOpen(false);
 
-          // Fetch balance on Solana Devnet
           try {
             const conn = new Connection(clusterApiUrl("devnet"), "confirmed");
             const lamports = await conn.getBalance(new PublicKey(pubKeyStr));
@@ -257,10 +482,19 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (err: any) {
-      console.error("Wallet connection rejected or error:", err);
-      // If user cancelled, don't throw uncaught error
+      console.warn("Wallet connection request error:", err);
+      setIsConnecting(false);
+      setConnectingWalletId(null);
+      if (err?.code === 4001 || err?.message?.includes("rejected") || err?.message?.includes("User rejected")) {
+        setConnectionError("Connection was cancelled in the wallet popup. Click again to connect.");
+      } else {
+        setConnectionError(err?.message || "Failed to connect. Please approve the connection in your extension.");
+      }
       return false;
     }
+
+    setIsConnecting(false);
+    setConnectingWalletId(null);
     return false;
   };
 
@@ -274,6 +508,8 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
     setWalletName(null);
     setBalance(null);
     setActiveProvider(null);
+    setIsConnecting(false);
+    setConnectingWalletId(null);
   };
 
   // Send real transaction from connected wallet (MetaMask, Zerion, or Phantom)
@@ -295,12 +531,8 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
     try {
       if (chainType === "evm") {
         // Real EVM transaction prompt in MetaMask / Zerion
-        // Convert to hex value (or 0 for policy contract call)
         const isNativeEth = currency === "ETH";
         const valueWei = isNativeEth ? "0x" + Math.floor(amount * 1e18).toString(16) : "0x0";
-
-        // Construct parameters for eth_sendTransaction
-        // If recipient is a valid EVM address (0x...)
         const recipientAddress = to.startsWith("0x") && to.length === 42 ? to : address;
 
         const txParams: any = {
@@ -309,7 +541,7 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
           value: valueWei,
         };
 
-        // Trigger real MetaMask / Zerion confirmation popup!
+        // Real confirmation popup in MetaMask / Zerion!
         const txHash = await activeProvider.request({
           method: "eth_sendTransaction",
           params: [txParams],
@@ -325,7 +557,6 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
         try {
           destPubkey = new PublicKey(to);
         } catch {
-          // If destination is a demo alias, self-transfer or system address
           destPubkey = senderPubkey;
         }
 
@@ -333,7 +564,7 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
           SystemProgram.transfer({
             fromPubkey: senderPubkey,
             toPubkey: destPubkey,
-            lamports: 1000, // micro-transfer on Devnet to anchor proof
+            lamports: 1000,
           })
         );
 
@@ -341,7 +572,7 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
         transaction.recentBlockhash = blockhash;
         transaction.feePayer = senderPubkey;
 
-        // Trigger real Phantom / Solflare confirmation popup!
+        // Real confirmation popup in Phantom!
         const { signature } = await activeProvider.signAndSendTransaction(transaction);
         await conn.confirmTransaction(signature, "confirmed");
 
@@ -371,11 +602,15 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
         balance,
         network,
         isModalOpen,
+        isConnecting,
+        connectingWalletId,
+        connectionError,
         availableWallets,
-        openModal: () => setIsModalOpen(true),
-        closeModal: () => setIsModalOpen(false),
+        openModal,
+        closeModal,
         connectWallet,
         disconnect,
+        rescanWallets: scanWallets,
         sendPayment,
       }}
     >

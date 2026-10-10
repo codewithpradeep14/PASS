@@ -16,6 +16,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { ALL_CATEGORIES, PassCategory } from "@/types";
+import { ExpirationTimer } from "@/components/ExpirationTimer";
 
 export default function CreatePassPage() {
   const router = useRouter();
@@ -368,24 +369,62 @@ export default function CreatePassPage() {
           </div>
         )}
 
-        {/* Step 6: Expiration */}
+        {/* Step 6: Expiration Window & Live Timer */}
         {currentStep === 6 && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
               <span className="text-xs font-mono font-bold text-emerald-400 uppercase">Step 6</span>
-              <h2 className="text-xl font-bold text-white mt-1">Set Expiration Date</h2>
+              <h2 className="text-xl font-bold text-white mt-1">Set Expiration Window & Timer</h2>
               <p className="text-xs text-gray-400 mt-1">
-                After this timestamp, unused funds automatically expire and remain in the owner's vault.
+                Choose how long your recipient has to spend the funds (e.g. 1 hour for lunch, 24 hours, etc.). After this timer runs out, unused funds lock and remain in your vault.
               </p>
             </div>
+
+            {/* Quick 1-Click Duration Presets */}
             <div className="space-y-2">
-              <label className="text-xs text-gray-400">Expiration Date and Time</label>
+              <label className="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
+                <span>Quick Duration Presets:</span>
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { label: "1 Hour", ms: 3600 * 1000 },
+                  { label: "2 Hours", ms: 2 * 3600 * 1000 },
+                  { label: "6 Hours", ms: 6 * 3600 * 1000 },
+                  { label: "24 Hours (1 Day)", ms: 24 * 3600 * 1000 },
+                  { label: "3 Days", ms: 3 * 24 * 3600 * 1000 },
+                  { label: "7 Days (1 Week)", ms: 7 * 24 * 3600 * 1000 },
+                  { label: "30 Days (1 Month)", ms: 30 * 24 * 3600 * 1000 },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      const d = new Date(Date.now() + preset.ms);
+                      const offset = d.getTimezoneOffset() * 60000;
+                      const localISOTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+                      setExpiresAt(localISOTime);
+                    }}
+                    className="p-2.5 rounded-xl bg-white/[0.04] hover:bg-emerald-500/15 border border-white/10 hover:border-emerald-500/30 text-xs font-medium text-gray-200 hover:text-emerald-300 transition text-center"
+                  >
+                    ⏱️ {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs text-gray-400">Custom Date and Time</label>
               <input
                 type="datetime-local"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
                 className="w-full bg-[#090d16] border border-white/10 rounded-xl px-4 py-3 text-sm font-mono text-white focus:outline-none focus:border-emerald-500"
               />
+            </div>
+
+            {/* Live Ticking Timer Preview */}
+            <div className="pt-2">
+              <ExpirationTimer expiresAt={expiresAt} variant="banner" />
             </div>
           </div>
         )}
@@ -399,6 +438,11 @@ export default function CreatePassPage() {
               <p className="text-xs text-gray-400 mt-1">
                 Verify all parameters before initializing the on-chain policy.
               </p>
+            </div>
+
+            {/* Live Expiration Countdown Component */}
+            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10">
+              <ExpirationTimer expiresAt={expiresAt} variant="detailed" />
             </div>
 
             <div className="p-5 rounded-xl bg-[#090d16] border border-white/10 space-y-3 text-xs">
