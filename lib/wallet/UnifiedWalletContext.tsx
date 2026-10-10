@@ -126,7 +126,7 @@ export function UnifiedWalletProvider({ children }: { children: ReactNode }) {
     if (rdns && eip6963ProvidersRef.current.has(rdns)) {
       return eip6963ProvidersRef.current.get(rdns)?.provider;
     }
-    for (const [key, detail] of eip6963ProvidersRef.current.entries()) {
+    for (const [key, detail] of Array.from(eip6963ProvidersRef.current.entries())) {
       if (
         key.toLowerCase().includes(walletId) ||
         detail.info?.name?.toLowerCase().includes(walletId)

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { meteoraClient } from "@/lib/integrations/meteora/meteoraClient";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);

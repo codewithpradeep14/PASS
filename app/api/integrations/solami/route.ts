@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { solamiClient } from "@/lib/integrations/solami/solamiClient";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
