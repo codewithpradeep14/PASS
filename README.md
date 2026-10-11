@@ -1,3 +1,10 @@
+# Live website :- https://pass-inky-one.vercel.app/
+
+# Pitch video :- https://drive.google.com/file/d/17SrfmzpUJ3mNEM0Hg4wmdHtuGCiPPYqO/view?usp=drive_link
+
+# Demo video :- https://drive.google.com/file/d/1qU79IRm49GCeSaX8SDdePcQoKCYDcW-G/view?usp=drive_link
+
+
 # PASS — Money with Instructions
 
 > **Solana Hackathon Project**  
